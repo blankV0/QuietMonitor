@@ -168,3 +168,40 @@ class AlertResponse(BaseModel):
 
 class AlertResolveRequest(BaseModel):
     resolved: bool = True
+
+
+# ─────────────────────────────────────────────────────────────────
+# RISK ENGINE
+# ─────────────────────────────────────────────────────────────────
+class CheckDetail(BaseModel):
+    """One evaluated security control."""
+    check_id: str           # e.g. "FIREWALL_DISABLED"
+    label: str              # Human-readable name
+    weight: int             # Penalty points if failed
+    passed: bool            # True = compliant
+    value: Optional[str]    # Raw collected value for display
+
+
+class RiskDetail(BaseModel):
+    """Full risk engine output for a single machine."""
+    machine_id: int
+    hostname: str
+    risk_score: int                 # 0 (fully compliant) – 100 (max risk)
+    risk_level: str                 # "Trusted" | "Warning" | "Critical"
+    failed_checks: List[str]        # Check IDs that failed
+    checks: List[CheckDetail]       # Detailed breakdown of every check
+    max_possible_score: int = 150   # Sum of all weights (informational)
+
+    model_config = {"from_attributes": True}
+
+
+class FleetRiskSummary(BaseModel):
+    """Aggregated risk statistics across the whole monitored fleet."""
+    total_machines: int
+    trusted: int            # risk_score 0–30
+    warning: int            # risk_score 31–60
+    critical: int           # risk_score 61–100
+    unscored: int           # machines with no security data yet
+    avg_risk_score: Optional[float]
+    most_common_failure: Optional[str]   # check_id that failed most often
+    machines: List[RiskDetail]           # per-machine breakdown

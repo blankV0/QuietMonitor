@@ -21,15 +21,20 @@ from typing import Optional
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Risk weights (penalty points per failed control)
+# Weights match the product specification:
+#   Firewall disabled      +25
+#   Defender disabled      +30
+#   BitLocker disabled     +25
+#   Local admin present    +20
+#   RDP enabled            +15
+#   Unknown software       +35  (flat penalty when any unknown app detected)
 # ─────────────────────────────────────────────────────────────────────────────
-WEIGHT_FIREWALL_DISABLED   = 25   # Network perimeter collapsed → critical
-WEIGHT_DEFENDER_DISABLED   = 25   # AV/EDR absent → critical
-WEIGHT_BITLOCKER_DISABLED  = 20   # Data-at-rest not encrypted → high
-WEIGHT_LOCAL_ADMIN         = 15   # Elevated local accounts → medium
-WEIGHT_RDP_ENABLED         = 10   # Remote attack surface → medium
-WEIGHT_USB_ENABLED         = 10   # Removable media exfil path → medium
-WEIGHT_UNKNOWN_APP_PER     = 5    # Each unauthorised app → low (capped at 3)
-WEIGHT_UNKNOWN_APP_MAX     = 15   # Maximum penalty for unknown apps
+WEIGHT_FIREWALL_DISABLED   = 25   # Network perimeter collapsed
+WEIGHT_DEFENDER_DISABLED   = 30   # AV/EDR absent → highest penalty
+WEIGHT_BITLOCKER_DISABLED  = 25   # Data-at-rest not encrypted
+WEIGHT_LOCAL_ADMIN         = 20   # Elevated local accounts
+WEIGHT_RDP_ENABLED         = 15   # Remote attack surface open
+WEIGHT_UNKNOWN_APP         = 35   # Unauthorised software detected (flat)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Application allow-list
@@ -71,6 +76,7 @@ def _is_approved(app_name: str) -> bool:
 
 
 def _classify(score: int) -> str:
+    """Map clamped 0-100 score to a trust level label."""
     if score <= 30:
         return "trusted"
     elif score <= 60:
@@ -143,17 +149,20 @@ def calculate_risk(
         score += WEIGHT_RDP_ENABLED
         failed.append("RDP_ENABLED")
 
-    # ── 6. USB mass storage ─────────────────────────────────────────────────
+    # ── 6. USB mass storage (informational – not in primary spec) ────────────
+    # USB is tracked but does not contribute to the primary score so that the
+    # 6-check spec weights sum predictably.  The failed_checks list still
+    # records it so the UI can surface it.
     if usb_storage_enabled is True:
-        score += WEIGHT_USB_ENABLED
         failed.append("USB_STORAGE_ENABLED")
 
     # ── 7. Unauthorised applications ────────────────────────────────────────
+    # Flat penalty: any presence of unknown software triggers the full +35.
+    # The individual app names are preserved in failed_checks detail.
     if installed_apps:
         unknown = [a for a in installed_apps if not _is_approved(a)]
         if unknown:
-            penalty = min(len(unknown) * WEIGHT_UNKNOWN_APP_PER, WEIGHT_UNKNOWN_APP_MAX)
-            score += penalty
+            score += WEIGHT_UNKNOWN_APP
             failed.append("UNKNOWN_APPS_DETECTED")
 
     # ── Clamp and classify ───────────────────────────────────────────────────
