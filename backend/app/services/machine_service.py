@@ -12,11 +12,12 @@ both the Machine row and the MachineMetric snapshot.
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from ..models import Machine, MachineMetric
+from ..models import Machine, MachineMetric, SecurityEvent, SecuritySnapshot
 from ..schemas import AgentUpdate
 from ..utils import is_machine_online, determine_status
 from .alert_service import evaluate_and_create_alerts
 from .risk_engine import calculate_risk
+from .compliance_service import evaluate_machine as evaluate_compliance
 
 
 def upsert_machine(db: Session, payload: AgentUpdate) -> Machine:
@@ -82,6 +83,11 @@ def upsert_machine(db: Session, payload: AgentUpdate) -> Machine:
     machine.trust_level  = trust_level
     machine.failed_checks = failed_checks
 
+    # ── Compliance evaluation ─────────────────────────────────────
+    comp_result = evaluate_compliance(machine)
+    machine.compliance_status  = "Compliant" if comp_result.compliant else "Non-Compliant"
+    machine.last_security_scan = datetime.utcnow()
+
     # ── Historical snapshot ───────────────────────────────────────
     metric = MachineMetric(
         machine_id          = machine.id,
@@ -103,6 +109,19 @@ def upsert_machine(db: Session, payload: AgentUpdate) -> Machine:
     )
     db.add(metric)
 
+    # ── Security snapshot (risk/compliance history) ───────────────
+    snapshot = SecuritySnapshot(
+        machine_id        = machine.id,
+        risk_score        = risk_score,
+        risk_level        = trust_level,
+        compliance_status = machine.compliance_status,
+        snapshot_time     = datetime.utcnow(),
+    )
+    db.add(snapshot)
+
+    # ── Security events ───────────────────────────────────────────
+    _create_security_events(db, machine, failed_checks)
+
     db.commit()
     db.refresh(machine)
 
@@ -110,6 +129,42 @@ def upsert_machine(db: Session, payload: AgentUpdate) -> Machine:
     evaluate_and_create_alerts(db, machine)
 
     return machine
+
+
+def _create_security_events(db: Session, machine: Machine, failed_checks: list) -> None:
+    """
+    Emit SecurityEvent rows for each failed check so the event feed
+    shows what happened on each scan cycle.
+    """
+    now = datetime.utcnow()
+    CRITICAL_CHECKS = {"FIREWALL_DISABLED", "DEFENDER_DISABLED", "BITLOCKER_DISABLED"}
+
+    for check_id in failed_checks:
+        event_type = "CRITICAL" if check_id in CRITICAL_CHECKS else "WARNING"
+        label_map = {
+            "FIREWALL_DISABLED":     "Firewall disabled",
+            "DEFENDER_DISABLED":     "Defender / AV disabled",
+            "BITLOCKER_DISABLED":    "BitLocker encryption off",
+            "LOCAL_ADMIN_DETECTED":  "Local administrator account detected",
+            "RDP_ENABLED":           "RDP is enabled",
+            "USB_STORAGE_ENABLED":   "USB mass storage allowed",
+            "UNKNOWN_APPS_DETECTED": "Unauthorised software detected",
+        }
+        message = f"{machine.hostname} — {label_map.get(check_id, check_id)}"
+        db.add(SecurityEvent(
+            machine_id = machine.id,
+            event_type = event_type,
+            message    = message,
+            timestamp  = now,
+        ))
+
+    # Always emit an INFO scan-complete event
+    db.add(SecurityEvent(
+        machine_id = machine.id,
+        event_type = "INFO",
+        message    = f"{machine.hostname} — Security scan completed (risk: {machine.risk_score}, {machine.compliance_status})",
+        timestamp  = now,
+    ))
 
 
 def get_all_machines(db: Session, online_only: bool = False) -> list[Machine]:

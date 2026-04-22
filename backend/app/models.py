@@ -82,11 +82,19 @@ class Machine(Base):
     risk_score  = Column(Integer, nullable=True)          # 0 = safe, 100 = critical
     trust_level = Column(String(16), nullable=True)       # "trusted"|"warning"|"critical"
 
+    # Compliance policy evaluation result
+    compliance_status   = Column(String(32), nullable=True)   # "Compliant" | "Non-Compliant"
+    last_security_scan  = Column(DateTime, nullable=True)     # timestamp of last full scan
+
     # Relationships
-    metrics = relationship("MachineMetric", back_populates="machine",
-                           cascade="all, delete-orphan")
-    alerts  = relationship("Alert", back_populates="machine",
-                           cascade="all, delete-orphan")
+    metrics          = relationship("MachineMetric", back_populates="machine",
+                                    cascade="all, delete-orphan")
+    alerts           = relationship("Alert", back_populates="machine",
+                                    cascade="all, delete-orphan")
+    security_events  = relationship("SecurityEvent", back_populates="machine",
+                                    cascade="all, delete-orphan")
+    snapshots        = relationship("SecuritySnapshot", back_populates="machine",
+                                    cascade="all, delete-orphan")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -137,3 +145,34 @@ class Alert(Base):
 
     # Relationship back to the parent machine
     machine = relationship("Machine", back_populates="alerts")
+
+
+# ─────────────────────────────────────────────────────────────────
+# SECURITY EVENTS  (per-machine audit log)
+# ─────────────────────────────────────────────────────────────────
+class SecurityEvent(Base):
+    __tablename__ = "security_events"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    machine_id = Column(Integer, ForeignKey("machines.id"), nullable=False)
+    event_type = Column(String(16), nullable=False)   # "CRITICAL" | "WARNING" | "INFO"
+    message    = Column(Text, nullable=False)
+    timestamp  = Column(DateTime, default=datetime.utcnow, index=True)
+
+    machine = relationship("Machine", back_populates="security_events")
+
+
+# ─────────────────────────────────────────────────────────────────
+# SECURITY SNAPSHOTS  (historical risk/compliance tracking)
+# ─────────────────────────────────────────────────────────────────
+class SecuritySnapshot(Base):
+    __tablename__ = "security_snapshots"
+
+    id                = Column(Integer, primary_key=True, index=True)
+    machine_id        = Column(Integer, ForeignKey("machines.id"), nullable=False)
+    risk_score        = Column(Integer, nullable=True)
+    risk_level        = Column(String(16), nullable=True)
+    compliance_status = Column(String(32), nullable=True)
+    snapshot_time     = Column(DateTime, default=datetime.utcnow, index=True)
+
+    machine = relationship("Machine", back_populates="snapshots")

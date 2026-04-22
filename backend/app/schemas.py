@@ -238,3 +238,52 @@ class FleetComplianceStatus(BaseModel):
     non_compliant: int
     compliance_rate: float          # 0–100 percentage
     machines: List[MachineComplianceStatus]
+
+
+# ─────────────────────────────────────────────────────────────────
+# SECURITY EVENTS
+# ─────────────────────────────────────────────────────────────────
+class SecurityEventResponse(BaseModel):
+    id:         int
+    machine_id: int
+    event_type: str          # "CRITICAL" | "WARNING" | "INFO"
+    message:    str
+    timestamp:  datetime
+    hostname:   Optional[str] = None   # joined from Machine for convenience
+
+    model_config = {"from_attributes": True}
+
+
+# ─────────────────────────────────────────────────────────────────
+# MACHINE SECURITY DETAIL  (full security view for one machine)
+# ─────────────────────────────────────────────────────────────────
+class MachineSecurityDetail(BaseModel):
+    machine_id:        int
+    hostname:          str
+    ip_address:        Optional[str]
+    is_online:         bool
+    risk_score:        Optional[int]
+    trust_level:       Optional[str]
+    compliance_status: Optional[str]
+    last_security_scan: Optional[datetime]
+    failed_checks:     List[str]
+    checks:            List[CheckDetail]
+
+    # Raw security fields for icon display
+    firewall_enabled:    Optional[bool]
+    defender_enabled:    Optional[bool]
+    bitlocker_enabled:   Optional[bool]
+    rdp_enabled:         Optional[bool]
+    usb_storage_enabled: Optional[bool]
+    local_admins:        Optional[List[str]]
+
+    model_config = {"from_attributes": True}
+
+
+# ─────────────────────────────────────────────────────────────────
+# API RESPONSE ENVELOPE
+# ─────────────────────────────────────────────────────────────────
+class ApiResponse(BaseModel):
+    """Standard envelope: { success: true, data: <payload> }"""
+    success: bool = True
+    data: object
