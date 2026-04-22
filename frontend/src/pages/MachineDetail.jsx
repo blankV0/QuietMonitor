@@ -20,7 +20,7 @@ import {
 import {
   ArrowLeft, Cpu, HardDrive, MemoryStick,
   Wifi, WifiOff, User, Shield, Clock, Server,
-  ShieldCheck, ShieldAlert, ShieldOff,
+  ShieldCheck, ShieldAlert, ShieldOff, ExternalLink,
 } from 'lucide-react'
 
 import Navbar          from '../components/Navbar.jsx'
@@ -148,10 +148,23 @@ export default function MachineDetail() {
       <main style={s.main}>
 
         {/* Back */}
-        <button style={s.backBtn} onClick={() => navigate('/')}>
-          <ArrowLeft size={15} /> Back to Dashboard
-        </button>
-
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <button style={s.backBtn} onClick={() => navigate('/')}>
+            <ArrowLeft size={15} /> Back to Dashboard
+          </button>
+          <button
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+              padding: '0.45rem 0.9rem', borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--cyan-border, rgba(0,212,255,0.3))',
+              background: 'var(--cyan-dim, rgba(0,212,255,0.08))',
+              color: 'var(--cyan, #00d4ff)', fontSize: '0.82rem', cursor: 'pointer',
+            }}
+            onClick={() => navigate(`/machines/${id}/posture`)}
+          >
+            <ExternalLink size={13} /> Security Posture
+          </button>
+        </div>
         {/* Header */}
         <div style={s.header}>
           <Server size={28} style={{ color: 'var(--accent-blue)' }} />

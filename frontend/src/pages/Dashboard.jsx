@@ -1,12 +1,14 @@
-﻿/**
- * QuietMonitor â€“ pages/Dashboard.jsx
- * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
- * Zero Trust compliance dashboard.
+/**
+ * QuietMonitor - pages/Dashboard.jsx
+ * ------------------------------------
+ * SOC-style Zero Trust compliance dashboard.
  *
  * Features:
+ *   - Threat-level banner: fleet risk + compliance rate
  *   - Summary stats: Total / Online / Offline / Alerts / Trusted / Warning / Critical
+ *   - Compliance summary row: Compliant / Non-Compliant / Rate / Top Failure
  *   - Active alerts strip (AlertBanner)
- *   - Search + filter (All / Online / Trusted / Warning / Critical)
+ *   - Search + filter toolbar
  *   - Grid of MachineCard components
  *   - Auto-refresh every 30 seconds
  */
@@ -16,13 +18,17 @@ import { useNavigate } from 'react-router-dom'
 import {
   Server, Wifi, WifiOff, Bell, RefreshCw,
   ShieldCheck, ShieldAlert, ShieldOff,
+  Activity, CheckCircle2, XCircle, TrendingUp,
 } from 'lucide-react'
 
 import Navbar       from '../components/Navbar.jsx'
 import AlertBanner  from '../components/AlertBanner.jsx'
 import MachineCard  from '../components/MachineCard.jsx'
 import SearchBar    from '../components/SearchBar.jsx'
-import { getMachines, getAlerts, resolveAlert } from '../api/api.js'
+import {
+  getMachines, getAlerts, resolveAlert,
+  getFleetRiskSummary, getFleetComplianceStatus,
+} from '../api/api.js'
 
 const REFRESH_INTERVAL = 30_000
 
@@ -31,16 +37,25 @@ export default function Dashboard() {
 
   const [machines,    setMachines]    = useState([])
   const [alerts,      setAlerts]      = useState([])
+  const [riskSummary, setRiskSummary] = useState(null)
+  const [compliance,  setCompliance]  = useState(null)
   const [search,      setSearch]      = useState('')
-  const [filter,      setFilter]      = useState('all')   // 'all'|'online'|'trusted'|'warning'|'critical'
+  const [filter,      setFilter]      = useState('all')
   const [loading,     setLoading]     = useState(true)
   const [lastUpdate,  setLastUpdate]  = useState(null)
 
   const fetchData = useCallback(async () => {
     try {
-      const [machinesRes, alertsRes] = await Promise.all([getMachines(), getAlerts()])
+      const [machinesRes, alertsRes, riskRes, compRes] = await Promise.all([
+        getMachines(),
+        getAlerts(),
+        getFleetRiskSummary().catch(() => ({ data: null })),
+        getFleetComplianceStatus().catch(() => ({ data: null })),
+      ])
       setMachines(machinesRes.data)
       setAlerts(alertsRes.data)
+      setRiskSummary(riskRes.data)
+      setCompliance(compRes.data)
       setLastUpdate(new Date())
     } catch (err) {
       console.error('Dashboard fetch error:', err)
@@ -60,14 +75,22 @@ export default function Dashboard() {
     setAlerts((prev) => prev.filter((a) => a.id !== alertId))
   }
 
-  // â”€â”€ Derived counts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // -- Derived counts
   const online   = machines.filter((m) => m.is_online).length
   const offline  = machines.length - online
   const trusted  = machines.filter((m) => m.trust_level === 'trusted').length
   const warning  = machines.filter((m) => m.trust_level === 'warning').length
   const critical = machines.filter((m) => m.trust_level === 'critical').length
 
-  // â”€â”€ Filtered list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const fleetThreat =
+    critical > 0 ? 'critical' :
+    warning  > 0 ? 'warning'  :
+    machines.length > 0 ? 'trusted' : null
+
+  const THREAT_COLOR = { critical: '#ef4444', warning: '#eab308', trusted: '#22c55e' }
+  const THREAT_LABEL = { critical: 'CRITICAL', warning: 'ELEVATED', trusted: 'NORMAL' }
+
+  // -- Filtered list
   const filtered = machines
     .filter((m) => {
       if (filter === 'online')   return m.is_online
@@ -78,14 +101,35 @@ export default function Dashboard() {
     })
     .filter((m) => !search || m.hostname.toLowerCase().includes(search.toLowerCase()))
 
-  // â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // -- Styles
   const s = {
     page:  { minHeight: '100vh', background: 'var(--bg-primary)' },
     main:  { padding: '1.5rem', maxWidth: '1400px', margin: '0 auto' },
+
+    threatBanner: (color) => ({
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      flexWrap: 'wrap', gap: '0.75rem',
+      padding: '0.75rem 1.25rem', marginBottom: '1.25rem',
+      background: `${color}10`,
+      border: `1px solid ${color}30`,
+      borderLeft: `4px solid ${color}`,
+      borderRadius: 'var(--radius)',
+    }),
+    threatLabel: (color) => ({
+      display: 'flex', alignItems: 'center', gap: '0.5rem',
+      fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.1em', color,
+    }),
+    threatMeta: {
+      display: 'flex', alignItems: 'center', gap: '1.5rem',
+      fontSize: '0.78rem', color: 'var(--text-muted)',
+      fontFamily: 'var(--font-mono)',
+    },
+    threatStat: (color) => ({ display: 'flex', alignItems: 'center', gap: '0.3rem', color }),
+
     statsRow: {
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-      gap: '0.85rem', marginBottom: '1.5rem',
+      gap: '0.85rem', marginBottom: '1rem',
     },
     statCard: (color) => ({
       background: 'var(--bg-card)', border: '1px solid var(--border)',
@@ -95,6 +139,26 @@ export default function Dashboard() {
     }),
     statValue: { fontSize: '1.7rem', fontWeight: 700, lineHeight: 1 },
     statLabel: { fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' },
+
+    complianceRow: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+      gap: '0.85rem', marginBottom: '1.25rem',
+    },
+    compCard: (color) => ({
+      background: 'var(--bg-card)',
+      border: `1px solid ${color}30`,
+      borderRadius: 'var(--radius)', padding: '0.85rem 1.1rem',
+      display: 'flex', alignItems: 'center', gap: '0.75rem',
+    }),
+    compIcon: (color) => ({
+      width: '36px', height: '36px', borderRadius: '8px',
+      background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0,
+    }),
+    compValue: { fontSize: '1.5rem', fontWeight: 700, lineHeight: 1 },
+    compLabel: { fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '0.2rem' },
+
     toolbar: {
       display: 'flex', alignItems: 'center', flexWrap: 'wrap',
       gap: '0.6rem', marginBottom: '1.25rem',
@@ -127,7 +191,38 @@ export default function Dashboard() {
 
       <main style={s.main}>
 
-        {/* â”€â”€ Summary stats â”€â”€ */}
+        {/* -- SOC Threat Banner -- */}
+        {fleetThreat && (
+          <div style={s.threatBanner(THREAT_COLOR[fleetThreat])}>
+            <div style={s.threatLabel(THREAT_COLOR[fleetThreat])}>
+              <Activity size={14} />
+              THREAT LEVEL -- {THREAT_LABEL[fleetThreat]}
+            </div>
+            <div style={s.threatMeta}>
+              {riskSummary && (
+                <>
+                  <span style={s.threatStat('#ef4444')}>
+                    <ShieldOff size={12} /> {riskSummary.critical} critical
+                  </span>
+                  <span style={s.threatStat('#eab308')}>
+                    <ShieldAlert size={12} /> {riskSummary.warning} warning
+                  </span>
+                  <span style={s.threatStat('#22c55e')}>
+                    <ShieldCheck size={12} /> {riskSummary.trusted} trusted
+                  </span>
+                  {riskSummary.avg_risk_score != null && (
+                    <span>avg risk {riskSummary.avg_risk_score.toFixed(0)}</span>
+                  )}
+                </>
+              )}
+              {lastUpdate && (
+                <span>updated {lastUpdate.toLocaleTimeString()}</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* -- Summary stats -- */}
         <div style={s.statsRow}>
           <div style={s.statCard('var(--accent-blue)')}>
             <Server size={16} style={{ color: 'var(--accent-blue)' }} />
@@ -149,7 +244,6 @@ export default function Dashboard() {
             <span style={s.statValue}>{alerts.length}</span>
             <span style={s.statLabel}>Alerts</span>
           </div>
-          {/* Zero Trust trust-level cards */}
           <div style={s.statCard('#22c55e')}>
             <ShieldCheck size={16} style={{ color: '#22c55e' }} />
             <span style={{ ...s.statValue, color: '#22c55e' }}>{trusted}</span>
@@ -167,7 +261,55 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* â”€â”€ Toolbar â”€â”€ */}
+        {/* -- Compliance summary row -- */}
+        {compliance && (
+          <div style={s.complianceRow}>
+            <div style={s.compCard('#22c55e')}>
+              <div style={s.compIcon('#22c55e')}>
+                <CheckCircle2 size={18} color="#22c55e" />
+              </div>
+              <div>
+                <div style={{ ...s.compValue, color: '#22c55e' }}>{compliance.compliant}</div>
+                <div style={s.compLabel}>Policy Compliant</div>
+              </div>
+            </div>
+            <div style={s.compCard('#ef4444')}>
+              <div style={s.compIcon('#ef4444')}>
+                <XCircle size={18} color="#ef4444" />
+              </div>
+              <div>
+                <div style={{ ...s.compValue, color: '#ef4444' }}>{compliance.non_compliant}</div>
+                <div style={s.compLabel}>Non-Compliant</div>
+              </div>
+            </div>
+            <div style={s.compCard('var(--cyan)')}>
+              <div style={s.compIcon('var(--cyan)')}>
+                <TrendingUp size={18} color="var(--cyan)" />
+              </div>
+              <div>
+                <div style={{ ...s.compValue, color: 'var(--cyan)', fontFamily: 'var(--font-mono)' }}>
+                  {compliance.compliance_rate.toFixed(1)}%
+                </div>
+                <div style={s.compLabel}>Compliance Rate</div>
+              </div>
+            </div>
+            {riskSummary?.most_common_failure && (
+              <div style={s.compCard('#f97316')}>
+                <div style={s.compIcon('#f97316')}>
+                  <ShieldAlert size={18} color="#f97316" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f97316', fontFamily: 'var(--font-mono)', marginBottom: '0.15rem' }}>
+                    {riskSummary.most_common_failure.replace(/_/g, ' ')}
+                  </div>
+                  <div style={s.compLabel}>Top Failure</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* -- Toolbar -- */}
         <div style={s.toolbar}>
           <SearchBar value={search} onChange={(e) => setSearch(e.target.value)} />
 
@@ -187,10 +329,10 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* â”€â”€ Machine grid â”€â”€ */}
+        {/* -- Machine grid -- */}
         {loading ? (
           <div style={{ color: 'var(--text-muted)', padding: '2rem', textAlign: 'center' }}>
-            Loading machinesâ€¦
+            Loading machines...
           </div>
         ) : (
           <div style={s.grid}>

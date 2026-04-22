@@ -205,3 +205,36 @@ class FleetRiskSummary(BaseModel):
     avg_risk_score: Optional[float]
     most_common_failure: Optional[str]   # check_id that failed most often
     machines: List[RiskDetail]           # per-machine breakdown
+
+
+# ─────────────────────────────────────────────────────────────────
+# COMPLIANCE POLICY
+# ─────────────────────────────────────────────────────────────────
+
+class ComplianceRule(BaseModel):
+    """One evaluated compliance policy rule."""
+    rule_id: str            # e.g. "FIREWALL_ENABLED"
+    label: str              # Human-readable name
+    severity: str           # "critical" | "warning"
+    passed: bool            # True = compliant
+    details: Optional[str]  # Explanation message
+
+
+class MachineComplianceStatus(BaseModel):
+    """Compliance evaluation result for a single machine."""
+    machine_id: int
+    hostname: str
+    compliant: bool
+    failed_rules: List[str]
+    severity: str           # "compliant" | "warning" | "critical"
+    rules: List[ComplianceRule]
+    evaluated_at: datetime
+
+
+class FleetComplianceStatus(BaseModel):
+    """Aggregated compliance status for the whole fleet."""
+    total_machines: int
+    compliant: int
+    non_compliant: int
+    compliance_rate: float          # 0–100 percentage
+    machines: List[MachineComplianceStatus]

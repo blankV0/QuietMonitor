@@ -85,4 +85,24 @@ export const getAllAlerts = (limit = 200) =>
 export const resolveAlert = (id) =>
   api.patch(`/alerts/${id}/resolve`, { resolved: true })
 
+// ─────────────────────────────────────────────────────────────────
+// RISK ENGINE
+// ─────────────────────────────────────────────────────────────────
+
+/** GET /machines/risk-summary – fleet-wide risk statistics */
+export const getFleetRiskSummary = () => api.get('/machines/risk-summary')
+
+/** GET /machines/:id/risk – detailed risk breakdown for one machine */
+export const getMachineRisk = (id) => api.get(`/machines/${id}/risk`)
+
+// ─────────────────────────────────────────────────────────────────
+// COMPLIANCE
+// ─────────────────────────────────────────────────────────────────
+
+/** GET /compliance/status – fleet-wide binary compliance summary */
+export const getFleetComplianceStatus = () => api.get('/compliance/status')
+
+/** GET /compliance/status/:id – compliance detail for one machine */
+export const getMachineCompliance = (id) => api.get(`/compliance/status/${id}`)
+
 export default api

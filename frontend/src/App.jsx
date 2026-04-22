@@ -10,9 +10,10 @@
 import React, { useState, useEffect, createContext, useContext } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 
-import Login       from './pages/Login.jsx'
-import Dashboard   from './pages/Dashboard.jsx'
-import MachineDetail from './pages/MachineDetail.jsx'
+import Login          from './pages/Login.jsx'
+import Dashboard      from './pages/Dashboard.jsx'
+import MachineDetail  from './pages/MachineDetail.jsx'
+import SecurityPosture from './pages/SecurityPosture.jsx'
 
 // ── Auth Context ──────────────────────────────────────────────────
 // Provides { token, role, login(), logout() } to any child component
@@ -72,6 +73,9 @@ export default function App() {
           } />
           <Route path="/machines/:id" element={
             <PrivateRoute><MachineDetail /></PrivateRoute>
+          } />
+          <Route path="/machines/:id/posture" element={
+            <PrivateRoute><SecurityPosture /></PrivateRoute>
           } />
 
           {/* Catch-all → home */}

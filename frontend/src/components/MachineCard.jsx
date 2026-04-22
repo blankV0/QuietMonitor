@@ -18,6 +18,7 @@ import React from 'react'
 import {
   Cpu, HardDrive, MemoryStick, Wifi, WifiOff,
   User, ShieldCheck, ShieldAlert, ShieldOff,
+  CheckCircle2, XCircle,
 } from 'lucide-react'
 
 // ── Trust level meta ──────────────────────────────────────────────
@@ -26,6 +27,41 @@ const TRUST_META = {
   warning:  { color: '#eab308', label: 'Warning',  glow: '0 0 0 2px rgba(234,179,8,0.25)',  Icon: ShieldAlert },
   critical: { color: '#ef4444', label: 'Critical', glow: '0 0 0 2px rgba(239,68,68,0.25)',  Icon: ShieldOff   },
   unknown:  { color: 'var(--text-muted)', label: 'Unknown', glow: 'none', Icon: ShieldCheck },
+}
+
+// ── Compliance evaluator (mirrors compliance_service.py logic) ────
+const _AV_DISABLED = new Set([
+  'disabled', 'not running', 'off', 'stopped', 'unknown',
+  'not installed', 'up to date, not running', 'not monitored', 'inactive', 'none',
+])
+const _ADMIN_NOISE = new Set(['administrator', 'domain admins', 'domain admins (group)', 'administrateurs'])
+
+function getComplianceStatus(machine) {
+  // Return null if no security data yet collected
+  const hasData = (
+    machine.firewall_enabled  != null ||
+    machine.bitlocker_enabled != null ||
+    machine.antivirus_status  != null ||
+    machine.local_admins      != null
+  )
+  if (!hasData) return null
+
+  const failures = []
+
+  if (machine.firewall_enabled === false)  failures.push('Firewall off')
+  if (machine.bitlocker_enabled === false) failures.push('No BitLocker')
+
+  if (machine.antivirus_status) {
+    const av = machine.antivirus_status.toLowerCase().trim()
+    if ([..._AV_DISABLED].some(s => av.includes(s))) failures.push('AV inactive')
+  }
+
+  if (machine.local_admins) {
+    const extra = machine.local_admins.filter(a => !_ADMIN_NOISE.has(a.toLowerCase().trim()))
+    if (extra.length > 0) failures.push('Extra admins')
+  }
+
+  return { compliant: failures.length === 0, failures }
 }
 
 // ── Metric bar ────────────────────────────────────────────────────
@@ -80,7 +116,8 @@ export default function MachineCard({ machine, onClick }) {
   const trustLevel = machine.trust_level || 'unknown'
   const meta       = TRUST_META[trustLevel] || TRUST_META.unknown
   const { Icon: TrustIcon } = meta
-  const failedChecks = machine.failed_checks || []
+  const failedChecks  = machine.failed_checks || []
+  const compStatus    = getComplianceStatus(machine)
 
   return (
     <div
@@ -130,8 +167,8 @@ export default function MachineCard({ machine, onClick }) {
         </span>
       </div>
 
-      {/* Trust badge + risk score */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}>
+      {/* Trust badge + risk score + compliance badge */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
         <span style={{
           display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
           fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase',
@@ -143,6 +180,23 @@ export default function MachineCard({ machine, onClick }) {
           <TrustIcon size={11} />
           {meta.label}
         </span>
+
+        {/* Compliance badge */}
+        {compStatus != null && (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+            fontSize: '0.68rem', fontWeight: 700,
+            padding: '0.2rem 0.5rem', borderRadius: '999px',
+            background: compStatus.compliant ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+            color: compStatus.compliant ? '#22c55e' : '#ef4444',
+          }}>
+            {compStatus.compliant
+              ? <><CheckCircle2 size={10} /> COMPLIANT</>
+              : <><XCircle size={10} /> POLICY FAIL</>
+            }
+          </span>
+        )}
+
         {machine.risk_score != null && (
           <span style={{ marginLeft: 'auto', fontSize: '0.72rem', fontWeight: 700, color: meta.color }}>
             Risk: {machine.risk_score}/100

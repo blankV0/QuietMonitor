@@ -27,6 +27,7 @@ from .auth import hash_password
 from .routes import machines as machines_router
 from .routes import auth as auth_router
 from .routes import alerts as alerts_router
+from .routes import compliance as compliance_router
 
 load_dotenv()
 
@@ -93,6 +94,7 @@ app.add_middleware(
 app.include_router(auth_router.router, tags=["Auth"])
 app.include_router(machines_router.router, tags=["Machines"])
 app.include_router(alerts_router.router, tags=["Alerts"])
+app.include_router(compliance_router.router, tags=["Compliance"])
 
 
 @app.get("/health", tags=["Health"])
